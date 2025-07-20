@@ -1,0 +1,1 @@
+-- Removed conversations table definition

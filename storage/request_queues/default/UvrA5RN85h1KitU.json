@@ -1,0 +1,9 @@
+{
+	"id": "UvrA5RN85h1KitU",
+	"json": "{\"id\":\"UvrA5RN85h1KitU\",\"url\":\"https://www.nbcnews.com/world/russia-ukraine-news\",\"loadedUrl\":\"https://www.nbcnews.com/world/russia-ukraine-news\",\"uniqueKey\":\"https://www.nbcnews.com/world/russia-ukraine-news\",\"method\":\"GET\",\"noRetry\":false,\"retryCount\":0,\"errorMessages\":[],\"headers\":{},\"userData\":{\"__crawlee\":{\"state\":4}},\"handledAt\":\"2025-07-16T09:50:52.579Z\"}",
+	"method": "GET",
+	"orderNo": null,
+	"retryCount": 0,
+	"uniqueKey": "https://www.nbcnews.com/world/russia-ukraine-news",
+	"url": "https://www.nbcnews.com/world/russia-ukraine-news"
+}
