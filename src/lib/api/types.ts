@@ -1,7 +1,18 @@
-import { ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import {
+  ChatCompletionMessageParam,
+  ChatCompletionTool,
+  ChatCompletionToolChoiceOption,
+} from 'openai/resources/chat/completions';
+import { ToolCall } from '@/types/tools';
 
 export interface ChatRequestBody {
-  messages: Array<{ role: string; content: string }>;
+  messages: Array<{
+    role: string;
+    content: string;
+    toolCalls?: ToolCall[];
+    toolCallId?: string;
+    toolName?: string;
+  }>;
   model?: string;
   temperature?: number;
   max_tokens?: number;
@@ -11,6 +22,9 @@ export interface ChatRequestBody {
   useRag?: boolean;
   ragSearchResults?: number;
   useWebScraping?: boolean;
+  // Tool calling support
+  tools?: ChatCompletionTool[];
+  toolChoice?: ChatCompletionToolChoiceOption;
 }
 
 export interface RagInfo {
@@ -36,6 +50,8 @@ export interface ChatCompletionParams {
   temperature: number;
   max_tokens: number;
   stream: boolean;
+  tools?: ChatCompletionTool[];
+  tool_choice?: ChatCompletionToolChoiceOption;
 }
 
 export interface UsageInfo {

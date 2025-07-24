@@ -26,7 +26,6 @@ export function ApiConfigTab({
 
   return (
     <div className="space-y-6">
-      {/* API Key Section */}
       <div className="space-y-3">
         <label className="text-sm font-medium text-foreground">API Key</label>
         <div className="relative">
@@ -58,7 +57,6 @@ export function ApiConfigTab({
         )}
       </div>
 
-      {/* Model Selection */}
       <div className="space-y-3">
         <label className="text-sm font-medium text-foreground">Model</label>
         <select
@@ -77,7 +75,6 @@ export function ApiConfigTab({
         </p>
       </div>
 
-      {/* System Prompt */}
       <div className="space-y-3">
         <label className="text-sm font-medium text-foreground">
           System Prompt
@@ -95,7 +92,6 @@ export function ApiConfigTab({
 
       <Separator className="my-6" />
 
-      {/* API Usage Section */}
       <div className="space-y-4">
         <h3 className="text-sm font-semibold text-foreground">
           API Usage Monitoring

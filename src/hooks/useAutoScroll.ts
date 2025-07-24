@@ -1,105 +1,90 @@
 import { useRef, useCallback, useEffect, useState } from 'react';
-import { Message } from '@/hooks/useMessages';
-
-interface UseAutoScrollOptions {
-  messages: Message[];
-  isLoading?: boolean;
-}
 
 /**
- * Robust chat auto-scroll hook for chat UIs.
- * - Auto-scrolls to bottom on new messages unless user scrolled up.
- * - Exposes state for showing a "scroll to bottom" button.
- * - Handles resize and fast message arrival.
+ * A robust React hook for auto-scrolling a chat-like interface.
+ * ... (comments from previous version) ...
+ *
+ * @returns An object containing:
+ * - `scrollContainerRef`: A ref for the scrollable container.
+ * - `contentRef`: A ref for the content wrapper.
+ * - `stickToBottom`: A function to forcefully scroll to bottom and keep it there.
+ * - `showScrollToBottom`: A boolean indicating if the "scroll to bottom" button should be shown.
  */
-export function useAutoScroll({
-  messages,
-  isLoading = false,
-}: UseAutoScrollOptions) {
+export function useAutoScroll() {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
-  const atBottomRef = useRef(true);
+  const userScrolledUp = useRef(false);
 
-  // Helper: check if user is at (or near) bottom
-  const checkAtBottom = useCallback(() => {
+  const isAtBottom = useCallback(() => {
     const container = scrollContainerRef.current;
     if (!container) return true;
-    const threshold = 32;
-    const { scrollTop, scrollHeight, clientHeight } = container;
-    return scrollTop + clientHeight >= scrollHeight - threshold;
+    const threshold = 50; // px
+    return (
+      container.scrollHeight - container.scrollTop - container.clientHeight <=
+      threshold
+    );
   }, []);
 
-  // Scroll event handler
-  const handleScroll = useCallback(() => {
-    const atBottom = checkAtBottom();
-    atBottomRef.current = atBottom;
-    setShowScrollToBottom(!atBottom);
-  }, [checkAtBottom]);
-
-  // Scroll to bottom (optionally smooth)
-  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior });
+  const scrollToBottom = useCallback((behavior: ScrollBehavior) => {
+    const container = scrollContainerRef.current;
+    if (container) {
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior,
+      });
     }
-    atBottomRef.current = true;
+  }, []);
+
+  /**
+   * Forcefully scrolls to the bottom and ensures the view stays locked there
+   * during subsequent content changes. Call this when you want to override the
+   * user's scroll position, e.g., after sending a message.
+   */
+  const stickToBottom = useCallback(() => {
+    userScrolledUp.current = false;
     setShowScrollToBottom(false);
-  }, []);
-
-  // On new messages: auto-scroll only if user is at bottom at the moment message arrives
-  useEffect(() => {
-    if (messages.length === 0) return;
-    if (atBottomRef.current) {
-      requestAnimationFrame(() => scrollToBottom('auto'));
-    }
-  }, [messages, scrollToBottom]);
-
-  // On loading: auto-scroll ONLY if user is at bottom
-  useEffect(() => {
-    if (!isLoading) return;
-    if (atBottomRef.current) {
-      scrollToBottom('smooth');
-    }
-  }, [isLoading, scrollToBottom]);
-
-  // Listen for scroll events
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-    container.addEventListener('scroll', handleScroll, { passive: true });
-    return () => container.removeEventListener('scroll', handleScroll);
-  }, [handleScroll]);
-
-  // Listen for resize events
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-    const handleResize = () => {
-      if (checkAtBottom()) {
-        scrollToBottom('auto');
-      }
-    };
-    window.addEventListener('resize', handleResize);
-    let observer: ResizeObserver | null = null;
-    if ('ResizeObserver' in window) {
-      observer = new ResizeObserver(handleResize);
-      observer.observe(container);
-    }
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      if (observer) observer.disconnect();
-    };
-  }, [checkAtBottom, scrollToBottom]);
-
-  // Manual scroll-to-bottom (e.g., button click)
-  const scrollToBottomManual = useCallback(() => {
     scrollToBottom('smooth');
   }, [scrollToBottom]);
 
+  const handleScroll = useCallback(() => {
+    if (isAtBottom()) {
+      if (userScrolledUp.current) {
+        userScrolledUp.current = false;
+        setShowScrollToBottom(false);
+      }
+    } else {
+      if (!userScrolledUp.current) {
+        userScrolledUp.current = true;
+        setShowScrollToBottom(true);
+      }
+    }
+  }, [isAtBottom]);
+
+  useEffect(() => {
+    const scrollContainer = scrollContainerRef.current;
+    const content = contentRef.current;
+    if (!scrollContainer || !content) return;
+
+    const observer = new ResizeObserver(() => {
+      if (!userScrolledUp.current) {
+        // Use 'auto' for streaming for a more instant, less bouncy feel
+        scrollToBottom('auto');
+      }
+    });
+    observer.observe(content);
+
+    scrollContainer.addEventListener('scroll', handleScroll);
+    return () => {
+      observer.disconnect();
+      scrollContainer.removeEventListener('scroll', handleScroll);
+    };
+  }, [handleScroll, scrollToBottom]);
+
   return {
     scrollContainerRef,
-    messagesEndRef,
+    contentRef,
+    stickToBottom,
     showScrollToBottom,
-    scrollToBottom: scrollToBottomManual,
   };
 }

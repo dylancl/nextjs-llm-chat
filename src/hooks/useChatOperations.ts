@@ -18,6 +18,8 @@ export function useChatOperations() {
     clearMessages,
     getLastUserMessage,
     setMessages,
+    addMessagePart,
+    updateLastContentPart,
   } = useMessages();
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -71,6 +73,26 @@ export function useChatOperations() {
         onTokenUpdate: (id, newContent, previousContent) => {
           streamingMetrics.updateTokenCount(id, newContent, previousContent);
         },
+        onToolCalls: (id, toolCalls) => {
+          // Update message with tool calls
+          updateMessage(id, { toolCalls });
+        },
+        onToolResults: (id, toolResults) => {
+          // Handle tool results - store them in the message for proper display
+          console.log('Tool results received:', toolResults);
+          updateMessage(id, { toolResults });
+        },
+        // New chronological callbacks
+        onAddContentPart: (id, content) => {
+          addMessagePart(id, { type: 'content', content });
+        },
+        onAddToolCallsPart: (id, toolCalls) => {
+          addMessagePart(id, { type: 'tool_calls', toolCalls });
+        },
+        onAddToolResultsPart: (id, toolResults) => {
+          addMessagePart(id, { type: 'tool_results', toolResults });
+        },
+        onUpdateLastContentPart: updateLastContentPart,
         onRagInfo: (id, ragInfo) => {
           // Update indicators as soon as we get RAG info (this happens early in streaming)
 
@@ -278,6 +300,7 @@ export function useChatOperations() {
       streamingMetrics,
       activityIndicators,
       artifacts,
+      messages,
     ]
   );
 

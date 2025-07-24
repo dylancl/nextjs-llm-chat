@@ -5,6 +5,8 @@ import {
 } from '@/lib/mockStreaming';
 import { MockConfig } from '@/types/mockConfig';
 import { ENHANCED_SYSTEM_PROMPT } from '@/lib/prompts/artifactPrompts';
+import { ToolDefinition, ToolCall, BUILT_IN_TOOLS } from '@/types/tools';
+import { convertToolsToOpenAIFormat } from '@/lib/api/toolUtils';
 
 export interface ChatRequestConfig {
   apiKey: string;
@@ -18,10 +20,20 @@ export interface ChatRequestConfig {
   useRag: boolean;
   ragSearchResults: number;
   useWebScraping: boolean;
+  // Tool calling support
+  useTools?: boolean;
+  tools?: ToolDefinition[];
+  toolChoice?: 'auto' | 'none' | string;
 }
 
 export interface ChatRequest {
-  messages: Array<{ role: string; content: string }>;
+  messages: Array<{
+    role: string;
+    content: string;
+    toolCalls?: ToolCall[];
+    toolCallId?: string;
+    toolName?: string;
+  }>;
   config: ChatRequestConfig;
   signal?: AbortSignal;
 }
@@ -39,6 +51,12 @@ export class ChatApiService {
     // Enhance system prompt with artifact instructions
     const enhancedSystemPrompt = ENHANCED_SYSTEM_PROMPT(config.systemPrompt);
 
+    // Prepare tools if enabled
+    const enabledTools =
+      config.useTools && config.tools && config.tools.length > 0
+        ? convertToolsToOpenAIFormat(config.tools)
+        : undefined;
+
     return fetch('/api/chat', {
       method: 'POST',
       headers: {
@@ -55,6 +73,9 @@ export class ChatApiService {
         useRag: config.useRag,
         ragSearchResults: config.ragSearchResults,
         useWebScraping: config.useWebScraping,
+        // Tool calling support
+        tools: enabledTools,
+        toolChoice: config.useTools ? config.toolChoice || 'auto' : undefined,
       }),
       signal,
     });

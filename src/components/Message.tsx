@@ -14,6 +14,7 @@ import {
   duotoneLight,
 } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { StreamingIndicator } from '@/components/StreamingIndicator';
+import { ToolCallDisplay } from '@/components/ToolCallDisplay';
 
 interface MessageProps {
   message: MessageType;
@@ -85,6 +86,186 @@ export const Message = memo(function Message({
     [handleSaveEdit, handleCancelEdit]
   );
 
+  // Function to render chronological message parts
+  const renderChronologicalParts = useCallback(() => {
+    if (!message.parts || message.parts.length === 0) {
+      // Fallback to original rendering if no parts
+      return (
+        <>
+          {/* Tool Calls Display for AI messages - show before content */}
+          {message.role !== 'user' &&
+            message.toolCalls &&
+            message.toolCalls.length > 0 && (
+              <ToolCallDisplay
+                toolCalls={message.toolCalls}
+                toolResults={message.toolResults}
+              />
+            )}
+
+          <div className="prose prose-sm max-w-none dark:prose-invert prose-neutral">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={
+                {
+                  // ... existing components
+                }
+              }
+            >
+              {message.content}
+            </ReactMarkdown>
+          </div>
+        </>
+      );
+    }
+
+    // Render parts chronologically
+    return (
+      <>
+        {message.parts.map((part) => {
+          switch (part.type) {
+            case 'content':
+              return (
+                <div
+                  key={part.id}
+                  className="prose prose-sm max-w-none dark:prose-invert prose-neutral"
+                >
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      code: ({ className, children, ...props }) => {
+                        const match = /language-(\w+)/.exec(className || '');
+                        const language = match ? match[1] : '';
+
+                        return match ? (
+                          <SyntaxHighlighter
+                            style={
+                              theme === 'dark' || theme === 'system'
+                                ? duotoneDark
+                                : duotoneLight
+                            }
+                            language={language}
+                            PreTag="div"
+                            customStyle={{
+                              margin: '1rem 0',
+                              borderRadius: '0.5rem',
+                              fontSize: '0.875rem',
+                            }}
+                          >
+                            {String(children).replace(/\n$/, '')}
+                          </SyntaxHighlighter>
+                        ) : (
+                          <code
+                            className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono"
+                            {...props}
+                          >
+                            {children}
+                          </code>
+                        );
+                      },
+                      blockquote: ({ children }) => (
+                        <blockquote className="border-l-4 border-primary/30 pl-4 italic text-muted-foreground mb-4">
+                          {children}
+                        </blockquote>
+                      ),
+                      pre: ({ children }) => (
+                        <div className="relative group mb-4">{children}</div>
+                      ),
+                      a: ({ children, href }) => (
+                        <a
+                          href={href}
+                          className="text-primary hover:text-primary/80 underline underline-offset-2"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {children}
+                        </a>
+                      ),
+                      table: ({ children }) => (
+                        <div className="overflow-x-auto mb-4">
+                          <table className="w-full border-collapse border border-border rounded-lg">
+                            {children}
+                          </table>
+                        </div>
+                      ),
+                      th: ({ children }) => (
+                        <th className="border border-border px-3 py-2 bg-muted font-medium text-left">
+                          {children}
+                        </th>
+                      ),
+                      td: ({ children }) => (
+                        <td className="border border-border px-3 py-2">
+                          {children}
+                        </td>
+                      ),
+                      p: ({ children }) => (
+                        <p className="text-foreground leading-relaxed mb-4 last:mb-0">
+                          {children}
+                        </p>
+                      ),
+                      h1: ({ children }) => (
+                        <h1 className="text-2xl font-semibold text-foreground mb-4 mt-6 first:mt-0">
+                          {children}
+                        </h1>
+                      ),
+                      h2: ({ children }) => (
+                        <h2 className="text-xl font-semibold text-foreground mb-3 mt-5 first:mt-0">
+                          {children}
+                        </h2>
+                      ),
+                      h3: ({ children }) => (
+                        <h3 className="text-lg font-medium text-foreground mb-2 mt-4 first:mt-0">
+                          {children}
+                        </h3>
+                      ),
+                      li: ({ children }) => (
+                        <li className="text-foreground leading-relaxed mb-2">
+                          {children}
+                        </li>
+                      ),
+                      ul: ({ children }) => (
+                        <ul className="list-disc pl-5 mb-4">{children}</ul>
+                      ),
+                      ol: ({ children }) => (
+                        <ol className="list-decimal pl-5 mb-4">{children}</ol>
+                      ),
+                    }}
+                  >
+                    {part.content || ''}
+                  </ReactMarkdown>
+                </div>
+              );
+
+            case 'tool_calls':
+              return part.toolCalls ? (
+                <ToolCallDisplay
+                  key={part.id}
+                  toolCalls={part.toolCalls}
+                  toolResults={message.toolResults?.filter((result) =>
+                    part.toolCalls?.some(
+                      (call) => call.id === result.toolCallId
+                    )
+                  )}
+                />
+              ) : null;
+
+            case 'tool_results':
+              // Tool results are displayed as part of the tool calls display
+              return null;
+
+            default:
+              return null;
+          }
+        })}
+      </>
+    );
+  }, [
+    message.parts,
+    message.toolCalls,
+    message.toolResults,
+    message.content,
+    theme,
+  ]);
+
   const isUser = message.role === 'user';
 
   return (
@@ -149,111 +330,9 @@ export const Message = memo(function Message({
               <div className="text-sm leading-relaxed">{localContent}</div>
             )
           ) : (
-            /* AI messages - markdown rendering */
-            <div className="prose prose-sm max-w-none dark:prose-invert prose-neutral">
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                components={{
-                  code: ({ className, children, ...props }) => {
-                    const match = /language-(\w+)/.exec(className || '');
-                    const language = match ? match[1] : '';
-
-                    return match ? (
-                      <SyntaxHighlighter
-                        style={
-                          theme === 'dark' || theme === 'system'
-                            ? duotoneDark
-                            : duotoneLight
-                        }
-                        language={language}
-                        PreTag="div"
-                        customStyle={{
-                          margin: '1rem 0',
-                          borderRadius: '0.5rem',
-                          fontSize: '0.875rem',
-                        }}
-                      >
-                        {String(children).replace(/\n$/, '')}
-                      </SyntaxHighlighter>
-                    ) : (
-                      <code
-                        className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono"
-                        {...props}
-                      >
-                        {children}
-                      </code>
-                    );
-                  },
-                  blockquote: ({ children }) => (
-                    <blockquote className="border-l-4 border-primary/30 pl-4 italic text-muted-foreground mb-4">
-                      {children}
-                    </blockquote>
-                  ),
-                  pre: ({ children }) => (
-                    <div className="relative group mb-4">{children}</div>
-                  ),
-                  a: ({ children, href }) => (
-                    <a
-                      href={href}
-                      className="text-primary hover:text-primary/80 underline underline-offset-2"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {children}
-                    </a>
-                  ),
-                  table: ({ children }) => (
-                    <div className="overflow-x-auto mb-4">
-                      <table className="w-full border-collapse border border-border rounded-lg">
-                        {children}
-                      </table>
-                    </div>
-                  ),
-                  th: ({ children }) => (
-                    <th className="border border-border px-3 py-2 bg-muted font-medium text-left">
-                      {children}
-                    </th>
-                  ),
-                  td: ({ children }) => (
-                    <td className="border border-border px-3 py-2">
-                      {children}
-                    </td>
-                  ),
-                  p: ({ children }) => (
-                    <p className="text-foreground leading-relaxed mb-4 last:mb-0">
-                      {children}
-                    </p>
-                  ),
-                  h1: ({ children }) => (
-                    <h1 className="text-2xl font-semibold text-foreground mb-4 mt-6 first:mt-0">
-                      {children}
-                    </h1>
-                  ),
-                  h2: ({ children }) => (
-                    <h2 className="text-xl font-semibold text-foreground mb-3 mt-5 first:mt-0">
-                      {children}
-                    </h2>
-                  ),
-                  h3: ({ children }) => (
-                    <h3 className="text-lg font-medium text-foreground mb-2 mt-4 first:mt-0">
-                      {children}
-                    </h3>
-                  ),
-                  li: ({ children }) => (
-                    <li className="text-foreground leading-relaxed mb-2">
-                      {children}
-                    </li>
-                  ),
-                  ul: ({ children }) => (
-                    <ul className="list-disc pl-5 mb-4">{children}</ul>
-                  ),
-                  ol: ({ children }) => (
-                    <ol className="list-decimal pl-5 mb-4">{children}</ol>
-                  ),
-                }}
-              >
-                {message.content}
-              </ReactMarkdown>
+            /* AI messages - chronological rendering */
+            <div className="space-y-3">
+              {renderChronologicalParts()}
 
               {/* Streaming cursor */}
               {message.isStreaming && (

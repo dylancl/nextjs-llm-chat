@@ -176,7 +176,6 @@ export default function ChatInterface() {
           <MessageList
             messages={messages}
             activityIndicators={activityIndicators}
-            isLoading={isLoading}
             onCopyMessage={handleCopyMessage}
             onRefreshLastResponse={handleRefreshLastResponse}
             conversationStarters={starters}
@@ -184,6 +183,7 @@ export default function ChatInterface() {
             onStarterClick={handleStarterClick}
             onRefreshStarters={handleRefreshStarters}
             onEditMessage={handleEditMessage}
+            isLoading={isLoading}
           />
 
           <div className="shrink-0">

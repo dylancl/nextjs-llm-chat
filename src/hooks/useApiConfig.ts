@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useLocalStorage } from './useLocalStorage';
 import { MockConfig, DEFAULT_MOCK_CONFIG } from '@/types/mockConfig';
+import { ToolName } from '@/types/tools';
 
 export interface Config {
   apiKey: string;
@@ -14,7 +15,10 @@ export interface Config {
   useRag: boolean;
   ragSearchResults: number;
   useWebScraping: boolean;
-  // New smart connection status settings
+  // Tool calling support
+  useTools: boolean;
+  availableTools: ToolName[]; // List of enabled tool names
+  toolChoice: 'auto' | 'none' | string;
   enableSmartConnectionStatus: boolean;
   devMode: boolean;
 }
@@ -56,6 +60,15 @@ const DEFAULT_CONFIG: Config = {
   useRag: false,
   ragSearchResults: 3,
   useWebScraping: false,
+  // Tool calling defaults
+  useTools: false,
+  availableTools: [
+    ToolName.GET_CURRENT_TIME,
+    ToolName.CALCULATE,
+    ToolName.SEARCH_WEB,
+    ToolName.SCRAPE_WEBSITE,
+  ],
+  toolChoice: 'auto',
   enableSmartConnectionStatus: true,
   devMode: process.env.NODE_ENV === 'development',
 };

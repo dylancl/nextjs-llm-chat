@@ -1,15 +1,18 @@
-import { NextRequest, NextResponse } from "next/server";
-import { ChatCompletion } from "openai/resources/chat/completions";
+import { NextRequest, NextResponse } from 'next/server';
+import { ChatCompletion } from 'openai/resources/chat/completions';
 import {
   createBonzaiClient,
   validateApiKey,
   validateMessages,
-} from "./bonzaiClient";
-import { enhanceMessagesWithRag } from "./ragService";
-import { createStreamingResponse } from "./streamingService";
-import { trackUsage } from "./usageTracking";
-import { convertToSimpleMessage, convertToOpenAIMessage } from "./messageUtils";
-import { ChatRequestBody, ChatCompletionParams, RagInfo } from "./types";
+} from './bonzaiClient';
+import { enhanceMessagesWithRag } from './ragService';
+import { createStreamingResponse } from './streamingService';
+import { trackUsage } from './usageTracking';
+import { convertToSimpleMessage, convertToOpenAIMessage } from './messageUtils';
+import { ChatRequestBody, ChatCompletionParams, RagInfo } from './types';
+import { executeToolCalls } from './toolService';
+import { BUILT_IN_TOOLS, ToolCall } from '@/types/tools';
+import { convertToolsToOpenAIFormat } from './toolUtils';
 
 export async function handleChatRequest(
   request: NextRequest
@@ -27,6 +30,8 @@ export async function handleChatRequest(
       useRag = false,
       ragSearchResults = 3,
       useWebScraping = false,
+      tools,
+      toolChoice,
     } = body;
 
     // Validate and prepare
@@ -57,17 +62,28 @@ export async function handleChatRequest(
 
     // Add system message if provided
     const fullMessages = system
-      ? [{ role: "system" as const, content: system }, ...enhancedMessages]
+      ? [{ role: 'system' as const, content: system }, ...enhancedMessages]
       : enhancedMessages;
 
+    // Prepare tools if provided
+    let enabledTools;
+    if (tools && tools.length > 0) {
+      enabledTools = tools;
+    }
+
     const params: ChatCompletionParams = {
-      model: model || process.env.DEFAULT_MODEL || "claude-3-5-sonnet",
+      model: model || process.env.DEFAULT_MODEL || 'claude-3-5-sonnet',
       messages: fullMessages,
       temperature:
-        temperature || parseFloat(process.env.DEFAULT_TEMPERATURE || "0.7"),
+        temperature || parseFloat(process.env.DEFAULT_TEMPERATURE || '0.7'),
       max_tokens:
-        max_tokens || parseInt(process.env.DEFAULT_MAX_TOKENS || "2000"),
+        max_tokens || parseInt(process.env.DEFAULT_MAX_TOKENS || '2000'),
       stream: stream || false,
+      ...(enabledTools &&
+        enabledTools.length > 0 && {
+          tools: enabledTools,
+          tool_choice: toolChoice || 'auto',
+        }),
     };
 
     if (!stream) {
@@ -76,6 +92,29 @@ export async function handleChatRequest(
         ...params,
         stream: false,
       })) as ChatCompletion;
+
+      // Handle tool calls if present
+      if (completion.choices[0]?.message?.tool_calls) {
+        const toolCalls = completion.choices[0].message
+          .tool_calls as ToolCall[];
+        const toolResults = await executeToolCalls(toolCalls, request);
+
+        // Add tool results to the response
+        const responseWithToolResults = {
+          ...completion,
+          toolResults,
+        };
+
+        // Track usage
+        const inputTokens = completion.usage?.prompt_tokens || 0;
+        const outputTokens = completion.usage?.completion_tokens || 0;
+        await trackUsage(request, { inputTokens, outputTokens });
+
+        return NextResponse.json({
+          ...responseWithToolResults,
+          ragInfo,
+        });
+      }
 
       // Track actual usage after getting response
       const inputTokens = completion.usage?.prompt_tokens || 0;
@@ -94,26 +133,26 @@ export async function handleChatRequest(
       return createStreamingResponse(bonzai, params, ragInfo, request);
     }
   } catch (error) {
-    console.error("API Error:", error);
+    console.error('API Error:', error);
 
     if (error instanceof Error) {
-      if (error.message === "API key is required") {
+      if (error.message === 'API key is required') {
         return NextResponse.json(
-          { error: "API key is required" },
+          { error: 'API key is required' },
           { status: 401 }
         );
       }
 
-      if (error.message === "Messages array is required") {
+      if (error.message === 'Messages array is required') {
         return NextResponse.json(
-          { error: "Messages array is required" },
+          { error: 'Messages array is required' },
           { status: 400 }
         );
       }
     }
 
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: 'Internal server error' },
       { status: 500 }
     );
   }

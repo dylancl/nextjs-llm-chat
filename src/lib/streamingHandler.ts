@@ -1,6 +1,7 @@
 import { RagInfo } from '@/lib/api/types';
 import { ArtifactDetector } from '@/lib/artifactDetection';
 import { Artifact, ArtifactMeta } from '@/types/artifacts';
+import { ToolCall, ToolName, ToolResult } from '@/types/tools';
 
 export interface StreamingHandlerCallbacks {
   onContentUpdate: (messageId: string, content: string) => void;
@@ -11,19 +12,37 @@ export interface StreamingHandlerCallbacks {
   ) => void;
   onRagInfo: (messageId: string, ragInfo: RagInfo) => void;
   onArtifactsDetected: (messageId: string, artifacts: Artifact[]) => void;
+  onToolCalls: (messageId: string, toolCalls: ToolCall[]) => void;
+  onToolResults: (messageId: string, toolResults: ToolResult[]) => void;
   onComplete: (
     messageId: string,
     finalContent: string,
     ragInfo?: RagInfo
   ) => void;
+  // New callbacks for chronological parts
+  onAddContentPart: (messageId: string, content: string) => void;
+  onAddToolCallsPart: (messageId: string, toolCalls: ToolCall[]) => void;
+  onAddToolResultsPart: (messageId: string, toolResults: ToolResult[]) => void;
+  onUpdateLastContentPart: (messageId: string, content: string) => void;
 }
 
 interface StreamingChunk {
   ragInfo?: RagInfo;
+  toolResults?: ToolResult[];
   choices?: Array<{
     delta?: {
       content?: string;
+      tool_calls?: Array<{
+        index?: number;
+        id?: string;
+        type?: string;
+        function?: {
+          name?: ToolName;
+          arguments?: string;
+        };
+      }>;
     };
+    finish_reason?: string | null;
   }>;
 }
 
@@ -33,6 +52,11 @@ export class StreamingResponseHandler {
   private messageRagInfo: RagInfo | undefined = undefined;
   private lastArtifactCheck = '';
   private detectedArtifacts: Map<string, Artifact> = new Map();
+  private collectedToolCalls: Map<number, ToolCall> = new Map();
+  private toolCallsCollected = false;
+  private currentContentPart = '';
+  private hasInitialContent = false;
+  private accumulatedToolResults: ToolResult[] = [];
 
   constructor(
     private messageId: string,
@@ -100,11 +124,65 @@ export class StreamingResponseHandler {
       this.callbacks.onRagInfo(this.messageId, this.messageRagInfo);
     }
 
+    // Check for tool results
+    if (parsed.toolResults && parsed.toolResults.length > 0) {
+      console.log('Found tool results in streaming chunk:', parsed.toolResults);
+
+      // Append new results to the accumulated list
+      this.accumulatedToolResults.push(...parsed.toolResults);
+
+      // Process each tool result individually for the chronological UI
+      parsed.toolResults.forEach((toolResult) => {
+        this.callbacks.onAddToolResultsPart(this.messageId, [toolResult]);
+      });
+
+      // For the legacy callback, send the entire accumulated list
+      this.callbacks.onToolResults(this.messageId, this.accumulatedToolResults);
+
+      // Reset for any follow-up content after tool results
+      this.currentContentPart = '';
+      this.hasInitialContent = false;
+      this.collectedToolCalls.clear();
+      this.toolCallsCollected = false;
+
+      return;
+    }
+
+    // Handle tool calls - allow multiple tool calls to be collected
+    if (parsed.choices?.[0]?.delta?.tool_calls) {
+      this.handleToolCallsDelta(parsed.choices[0].delta.tool_calls);
+    }
+
+    // Check for finish_reason to detect when tool calls are complete
+    if (
+      parsed.choices?.[0]?.finish_reason &&
+      this.collectedToolCalls.size > 0 &&
+      !this.toolCallsCollected
+    ) {
+      this.checkAndSendCompleteToolCalls();
+    }
+
     const content = parsed.choices?.[0]?.delta?.content || '';
 
     if (content) {
       const previousContent = this.accumulatedContent;
       this.accumulatedContent += content;
+      this.currentContentPart += content;
+
+      // If this is the first content and we haven't created an initial content part, create one
+      if (!this.hasInitialContent) {
+        this.callbacks.onAddContentPart(
+          this.messageId,
+          this.currentContentPart
+        );
+        this.hasInitialContent = true;
+      } else {
+        // Update the current content part
+        this.callbacks.onUpdateLastContentPart(
+          this.messageId,
+          this.currentContentPart
+        );
+      }
 
       this.callbacks.onContentUpdate(this.messageId, this.accumulatedContent);
       this.callbacks.onTokenUpdate(
@@ -115,6 +193,187 @@ export class StreamingResponseHandler {
 
       // Check for new artifacts during streaming (with debouncing)
       this.checkForStreamingArtifacts();
+    }
+  }
+
+  private handleToolCallsDelta(
+    toolCallDeltas: Array<{
+      index?: number;
+      id?: string;
+      type?: string;
+      function?: {
+        name?: ToolName;
+        arguments?: string;
+      };
+    }>
+  ): void {
+    for (const delta of toolCallDeltas) {
+      if (delta.index !== undefined) {
+        // Initialize tool call if it doesn't exist
+        if (!this.collectedToolCalls.has(delta.index)) {
+          this.collectedToolCalls.set(delta.index, {
+            id: delta.id || `call_${Date.now()}_${delta.index}`,
+            type: 'function',
+            function: {
+              name: ToolName.NONE,
+              arguments: '',
+            },
+          });
+        }
+
+        const toolCall = this.collectedToolCalls.get(delta.index)!;
+
+        // Update tool call ID if provided
+        if (delta.id) {
+          toolCall.id = delta.id;
+        }
+
+        // Handle function name - be more careful about concatenation
+        if (delta.function?.name !== undefined) {
+          if (delta.function.name === '') {
+            // Empty string means we're starting fresh
+            toolCall.function.name = ToolName.NONE;
+          } else {
+            const currentName = toolCall.function.name;
+            const newPart = delta.function.name;
+
+            if (currentName === ToolName.NONE) {
+              // First part of the name
+              toolCall.function.name = newPart;
+            } else {
+              // Check if this looks like a continuation or a new complete name
+              if (
+                newPart.includes('_') &&
+                newPart.length > currentName.length
+              ) {
+                // This looks like a complete function name, replace
+                toolCall.function.name = newPart;
+              } else if (
+                currentName.endsWith(
+                  newPart.substring(0, Math.min(newPart.length, 3))
+                )
+              ) {
+                // Avoid duplication - this part might already be included
+                const overlap = this.findOverlap(currentName, newPart);
+                if (overlap > 0) {
+                  toolCall.function.name = (currentName +
+                    newPart.substring(overlap)) as ToolName;
+                } else {
+                  toolCall.function.name = (toolCall.function.name +
+                    newPart) as ToolName;
+                }
+              } else {
+                // Normal concatenation
+                toolCall.function.name = (toolCall.function.name +
+                  newPart) as ToolName;
+              }
+            }
+          }
+        }
+
+        // Handle function arguments with better logic
+        if (delta.function?.arguments !== undefined) {
+          if (delta.function.arguments === '') {
+            // Empty string means starting fresh
+            toolCall.function.arguments = '';
+          } else {
+            const currentArgs = toolCall.function.arguments;
+            const newArgs = delta.function.arguments;
+
+            if (currentArgs === '') {
+              // First chunk of arguments
+              toolCall.function.arguments = newArgs;
+            } else {
+              // Check for JSON object boundaries to detect separate tool calls
+              const trimmedCurrent = currentArgs.trim();
+              const trimmedNew = newArgs.trim();
+
+              // If current ends with } and new starts with {, this is likely a new tool call
+              if (trimmedCurrent.endsWith('}') && trimmedNew.startsWith('{')) {
+                // Try to parse current as complete JSON
+                try {
+                  JSON.parse(trimmedCurrent);
+                  // Current is complete, so new args are for a different tool call
+                  // But since we're processing the same index, this might be an error
+                  // Log it but still replace
+                  console.warn('Detected potential tool call boundary issue');
+                  toolCall.function.arguments = newArgs;
+                } catch {
+                  // Current isn't complete JSON, append normally
+                  toolCall.function.arguments += newArgs;
+                }
+              } else {
+                // Normal case - append the new arguments
+                toolCall.function.arguments += newArgs;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Don't send tool calls to UI until they're complete
+    this.checkAndSendCompleteToolCalls();
+  }
+
+  private findOverlap(str1: string, str2: string): number {
+    let maxOverlap = 0;
+    const maxCheck = Math.min(str1.length, str2.length, 10); // Limit check to avoid performance issues
+
+    for (let i = 1; i <= maxCheck; i++) {
+      if (str1.substring(str1.length - i) === str2.substring(0, i)) {
+        maxOverlap = i;
+      }
+    }
+
+    return maxOverlap;
+  }
+
+  private checkAndSendCompleteToolCalls(): void {
+    if (this.toolCallsCollected) return;
+
+    // Convert map to array
+    const toolCallsArray = Array.from(this.collectedToolCalls.values());
+
+    // Filter out incomplete tool calls and validate JSON
+    const completeToolCalls = toolCallsArray.filter((tc) => {
+      if (!tc || !tc.function.name || !tc.function.arguments.trim()) {
+        return false;
+      }
+
+      // Validate that arguments is valid JSON
+      try {
+        JSON.parse(tc.function.arguments);
+        return true;
+      } catch {
+        console.warn(
+          `Invalid JSON in tool call ${tc.id}:`,
+          tc.function.arguments
+        );
+        return false;
+      }
+    });
+
+    // Only send if we have valid complete tool calls
+    if (completeToolCalls.length > 0) {
+      this.toolCallsCollected = true;
+
+      // Create a separate chronological part for each tool call
+      // This ensures each tool call gets its own UI card
+      completeToolCalls.forEach((toolCall) => {
+        // Create a unique part for each tool call to ensure separate UI cards
+        this.callbacks.onAddToolCallsPart(this.messageId, [toolCall]);
+      });
+
+      // Send all tool calls together for backward compatibility
+      // Use a longer timeout to ensure UI has time to process individual cards
+      setTimeout(() => {
+        this.callbacks.onToolCalls(this.messageId, completeToolCalls);
+      }, 200);
+
+      // Reset current content part for any follow-up content
+      this.currentContentPart = '';
+      this.hasInitialContent = false;
     }
   }
 

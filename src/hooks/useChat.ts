@@ -4,6 +4,7 @@ import { ChatApiService } from '@/lib/chatApiService';
 import { MockConfig } from '@/types/mockConfig';
 import { Message, StreamingMetrics } from './useMessages';
 import { useConversations } from './useConversations';
+import { BUILT_IN_TOOLS } from '@/types/tools';
 
 // Re-export types for backwards compatibility
 export type { Message, StreamingMetrics };
@@ -20,6 +21,10 @@ interface UseChatProps {
   useRag: boolean;
   ragSearchResults: number;
   useWebScraping: boolean;
+  // Tool calling support
+  useTools?: boolean;
+  availableTools?: string[];
+  toolChoice?: 'auto' | 'none' | string;
 }
 
 export function useChat() {
@@ -137,16 +142,41 @@ export function useChat() {
           config
         );
 
+        // Prepare tools if enabled
+        const enabledTools =
+          config.useTools && config.availableTools
+            ? BUILT_IN_TOOLS.filter((tool) =>
+                config.availableTools?.includes(tool.name)
+              )
+            : undefined;
+
+        // Prepare config with tools
+        const configWithTools = {
+          ...config,
+          tools: enabledTools,
+        };
+
         // Make API request
         const response = await ChatApiService.sendChatRequest({
           messages: [
             ...messages,
             { role: 'user', content: content.trim() },
-          ].map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
-          config,
+          ].map((m) => {
+            if ('toolCalls' in m) {
+              return {
+                role: m.role,
+                content: m.content,
+                toolCalls: m.toolCalls,
+                toolCallId: m.toolCallId,
+                toolName: m.toolName,
+              };
+            }
+            return {
+              role: m.role,
+              content: m.content,
+            };
+          }),
+          config: configWithTools,
           signal: abortController.signal,
         });
 

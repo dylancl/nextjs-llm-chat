@@ -15,6 +15,7 @@ import { ApiConfigTab } from './config/ApiConfigTab';
 import { ModelConfigTab } from './config/ModelConfigTab';
 import { MockConfigTab } from './config/MockConfigTab';
 import { DebugConfigTab } from './config/DebugConfigTab';
+import { ToolsConfigTab } from './config/ToolsConfigTab';
 import { ConfigFooter } from './config/ConfigFooter';
 
 interface ConfigModalProps {
@@ -58,12 +59,15 @@ export function ConfigModal({
 
         <div className="flex-1 flex flex-col min-h-0 px-6 py-4">
           <Tabs defaultValue="api" className="w-full h-full flex flex-col">
-            <TabsList className="grid w-full grid-cols-4 h-8 flex-shrink-0">
+            <TabsList className="grid w-full grid-cols-5 h-8 flex-shrink-0">
               <TabsTrigger value="api" className="text-xs">
                 API
               </TabsTrigger>
               <TabsTrigger value="model" className="text-xs">
                 Model
+              </TabsTrigger>
+              <TabsTrigger value="tools" className="text-xs">
+                Tools
               </TabsTrigger>
               <TabsTrigger value="mock" className="text-xs">
                 Mock
@@ -92,6 +96,18 @@ export function ConfigModal({
             >
               <div className="pr-2 space-y-4">
                 <ModelConfigTab
+                  config={config}
+                  onConfigChange={onConfigChange}
+                />
+              </div>
+            </TabsContent>
+
+            <TabsContent
+              value="tools"
+              className="mt-3 flex-1 overflow-y-auto data-[state=active]:flex data-[state=active]:flex-col"
+            >
+              <div className="pr-2 space-y-4">
+                <ToolsConfigTab
                   config={config}
                   onConfigChange={onConfigChange}
                 />
