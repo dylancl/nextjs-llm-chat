@@ -15,10 +15,27 @@ export function getDatabase() {
   }
 
   if (!client) {
-    client = createClient({
-      url: process.env.DATABASE_URL || 'file:./dev.db',
-      authToken: process.env.TURSO_AUTH_TOKEN || undefined,
-    });
+    // Check if we're in development mode and no Turso URL is provided
+    const isDevelopment = process.env.NODE_ENV === 'development';
+    const tursoUrl = process.env.TURSO_DATABASE_URL;
+
+    console.log(
+      `Initializing database connection. Development mode: ${isDevelopment}, Turso URL: ${tursoUrl}`
+    );
+
+    if (isDevelopment && !tursoUrl) {
+      // Use local SQLite file for development
+      client = createClient({
+        url: 'file:./dev.db',
+      });
+    } else {
+      // Use Turso for production or when explicitly configured
+      client = createClient({
+        url: process.env.TURSO_DATABASE_URL!,
+        authToken: process.env.TURSO_AUTH_TOKEN!,
+      });
+    }
+
     db = drizzle(client, { schema });
   }
 
