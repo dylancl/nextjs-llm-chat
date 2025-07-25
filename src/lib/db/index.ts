@@ -17,6 +17,7 @@ export function getDatabase() {
   if (!client) {
     client = createClient({
       url: process.env.DATABASE_URL || 'file:./dev.db',
+      authToken: process.env.TURSO_AUTH_TOKEN || undefined,
     });
     db = drizzle(client, { schema });
   }
