@@ -11,8 +11,8 @@ import { trackUsage } from './usageTracking';
 import { convertToSimpleMessage, convertToOpenAIMessage } from './messageUtils';
 import { ChatRequestBody, ChatCompletionParams, RagInfo } from './types';
 import { executeToolCalls } from './toolService';
-import { BUILT_IN_TOOLS, ToolCall } from '@/types/tools';
-import { convertToolsToOpenAIFormat } from './toolUtils';
+import { ToolCall } from '@/types/tools';
+import { processSystemPromptTemplate } from '@/lib/promptVariables';
 
 export async function handleChatRequest(
   request: NextRequest
@@ -60,9 +60,18 @@ export async function handleChatRequest(
       ragInfo = ragResult.ragInfo;
     }
 
-    // Add system message if provided
-    const fullMessages = system
-      ? [{ role: 'system' as const, content: system }, ...enhancedMessages]
+    // Add system message if provided, processing any template variables
+    const processedSystem = system
+      ? processSystemPromptTemplate(
+          system,
+          request.headers.get('user-agent') || undefined
+        )
+      : null;
+    const fullMessages = processedSystem
+      ? [
+          { role: 'system' as const, content: processedSystem },
+          ...enhancedMessages,
+        ]
       : enhancedMessages;
 
     // Prepare tools if provided

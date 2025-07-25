@@ -92,7 +92,7 @@ async function processStream(
   request: NextRequest,
   totalContent: string,
   currentMessages: ChatCompletionMessageParam[] = params.messages,
-  maxSteps: number = 10 // Prevent infinite loops
+  maxSteps: number = 50 // Prevent infinite loops
 ): Promise<string> {
   if (maxSteps <= 0) {
     console.warn('Max steps reached, stopping tool call chain');

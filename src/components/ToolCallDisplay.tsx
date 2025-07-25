@@ -1,6 +1,5 @@
 'use client';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   ChevronDown,
@@ -211,7 +210,6 @@ function ToolCallTimelineItem({
         )}
       </div>
 
-      {/* Content */}
       <div className={cn('flex-1 pb-8 pt-1', isLast && 'pb-2')}>
         <div
           className="group cursor-pointer"
@@ -222,12 +220,6 @@ function ToolCallTimelineItem({
               <p className="font-semibold text-sm text-foreground">
                 {formatToolName(toolCall.function.name)}
               </p>
-              <Badge
-                variant={statusInfo.badgeVariant}
-                className="h-5 text-xs font-medium"
-              >
-                {statusInfo.label}
-              </Badge>
             </div>
             <ChevronDown
               className={cn(
@@ -243,7 +235,6 @@ function ToolCallTimelineItem({
           )}
         </div>
 
-        {/* Collapsible Content */}
         <div
           ref={contentRef}
           className="grid transition-all duration-300 ease-in-out"

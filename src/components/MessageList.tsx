@@ -41,7 +41,6 @@ interface MessageListProps {
   isLoadingStarters?: boolean;
   onStarterClick?: (prompt: string) => void;
   onRefreshStarters?: () => void;
-  isLoading: boolean;
 }
 
 export const MessageList = memo(function MessageList({
@@ -54,38 +53,33 @@ export const MessageList = memo(function MessageList({
   isLoadingStarters = false,
   onStarterClick,
   onRefreshStarters,
-  isLoading,
 }: MessageListProps) {
-  const {
-    scrollContainerRef,
-    contentRef, // Use this new ref
-    showScrollToBottom,
-    stickToBottom,
-  } = useAutoScroll();
+  const lastMessage = messages[messages.length - 1];
+  const scrollDependency = lastMessage
+    ? `${lastMessage.id}-${lastMessage.content.length}`
+    : 'initial';
+
+  const { scrollContainerRef, showScrollToBottom, stickToBottom } =
+    useAutoScroll(scrollDependency);
 
   const lastMessageIdRef = useRef<string | null>(null);
 
-  // This effect determines when to force the scroll to the bottom.
+  // We only need to forcefully stick to the bottom in ONE scenario:
+  // when the USER sends a new message.
+  // The hook's passive auto-scroll will handle the assistant's reply perfectly.
   useEffect(() => {
-    const lastMessage = messages[messages.length - 1];
-
-    // Check if a new message has been added to the list.
-    if (lastMessage && lastMessage.id !== lastMessageIdRef.current) {
-      // Always scroll down when the user sends a new message.
-      if (lastMessage.role === 'user') {
-        stickToBottom();
-      }
-      // Also scroll down when the assistant's response *starts* streaming.
-      // The `isLoading` flag confirms that we're waiting for a response.
-      else if (lastMessage.role === 'assistant' && isLoading) {
-        stickToBottom();
-      }
+    const lastMsg = messages[messages.length - 1];
+    if (
+      lastMsg &&
+      lastMsg.id !== lastMessageIdRef.current &&
+      lastMsg.role === 'user'
+    ) {
+      stickToBottom();
     }
-    // Keep track of the last message ID to avoid re-scrolling on every render.
-    if (lastMessage) {
-      lastMessageIdRef.current = lastMessage.id;
+    if (lastMsg) {
+      lastMessageIdRef.current = lastMsg.id;
     }
-  }, [messages, isLoading, stickToBottom]);
+  }, [messages, stickToBottom]);
 
   if (messages.length === 0) {
     return (
@@ -122,7 +116,7 @@ export const MessageList = memo(function MessageList({
         ref={scrollContainerRef}
         className="h-full overflow-y-auto px-4 py-6 space-y-6"
       >
-        <div ref={contentRef} className="max-w-4xl mx-auto space-y-6 w-full">
+        <div className="max-w-4xl mx-auto space-y-6 w-full">
           {messages.map((message, index) => {
             // Show refresh button only for user messages that are followed by an assistant message
             // or are the last user message with at least one response in the conversation
@@ -155,7 +149,6 @@ export const MessageList = memo(function MessageList({
                   }
                 />
 
-                {/* Render activity indicators after user messages */}
                 {isUserMessage && messageIndicators.length > 0 && (
                   <div className="space-y-3">
                     {messageIndicators.map((indicator) => (
@@ -172,7 +165,6 @@ export const MessageList = memo(function MessageList({
         </div>
       </div>
 
-      {/* Scroll to bottom button - only show when user is not at bottom */}
       {showScrollToBottom && (
         <div className="absolute bottom-4 right-4">
           <Button
