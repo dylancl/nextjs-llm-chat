@@ -1,0 +1,11 @@
+{
+  "functions": {
+    "app/api/**/*.ts": {
+      "maxDuration": 30
+    }
+  },
+  "env": {
+    "DATABASE_URL": "@database-url",
+    "DATABASE_AUTH_TOKEN": "@database-auth-token"
+  }
+}
